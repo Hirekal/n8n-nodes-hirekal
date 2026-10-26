@@ -2,7 +2,7 @@
 
 This is an n8n community node. It lets you create and look up [Hirekal](https://hirekal.com) jobs and applications from an n8n workflow, and start a workflow when a candidate submits an application.
 
-Hirekal is a hiring platform. This node calls the Hirekal API (`/api/v1`) with OAuth2. **Hirekal Trigger** subscribes every current job and receives `NEW_APPLICATION` events. See [Trigger: application submitted](#trigger-application-submitted).
+Hirekal is a hiring platform. This node calls the Hirekal API (`/api/v1`) with OAuth2. **Hirekal Trigger** registers one organization webhook and receives `NEW_APPLICATION` events for any job in the org. See [Trigger: application submitted](#trigger-application-submitted).
 
 The repository overview is in the [root README](../README.md).
 
@@ -94,13 +94,17 @@ Use **Hirekal Trigger**. It starts the workflow when a candidate submits an appl
 2. Select the same **Hirekal OAuth2 API** credential.
 3. Activate the workflow.
 
-Activation loads every job (`GET /jobs?status=ALL`) and saves this trigger's URL on each one (`PATCH /jobs/:jobId/webhook`). That replaces a webhook URL already stored on those jobs. Deactivating the workflow turns delivery off for every job it subscribed. Jobs created after activation are picked up the next time you activate the workflow.
+Activation registers this workflow's URL (`PUT /integrations/n8n/webhook`) in Hirekal. Each workflow URL is stored separately, so multiple active workflows in the same org can all receive applications. Deactivating clears only this URL (`DELETE /integrations/n8n/webhook` with `{ "url": "..." }`). Per-job webhook settings in Hirekal are not changed. New jobs are included automatically—no re-activation needed.
 
 The public apply page does not call n8n. After the trigger is active, a public submit makes Hirekal POST `NEW_APPLICATION` here. The body includes `job` and `application`. **Include Payload Details** also asks for answers, transcripts, and metrics. Hirekal may wait until AI processing finishes before sending that richer payload.
 
-Hirekal checks each job URL with `event: "TEST"` while activating. The trigger answers that check and does not start a workflow run for it. A real submit arrives as `event: "NEW_APPLICATION"`.
+Hirekal sends `event: "TEST"` to validate the URL while activating. The trigger ignores that ping so activating does not start a workflow run. A real submit arrives as `event: "NEW_APPLICATION"`.
 
-The API must accept the n8n OAuth access token on `PATCH /jobs/:jobId/webhook`. If activation fails with 401, the credential is connected in n8n but Hirekal is still allowing only recruiter login JWTs.
+### Test this trigger
+
+**Test this trigger** only registers the org webhook (`PUT /integrations/n8n/webhook`). It does not inject a sample application. To see real data in the workflow, submit an application on the public apply page (or use n8n’s mock-data panel for expressions).
+
+The API must accept the n8n OAuth access token on `PUT /integrations/n8n/webhook`. If activation fails with 401, the credential is connected in n8n but Hirekal is still allowing only recruiter login JWTs.
 
 ## Compatibility
 

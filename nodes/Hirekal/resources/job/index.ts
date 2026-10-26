@@ -26,7 +26,7 @@ export const jobDescription: INodeProperties[] = [
 				routing: {
 					request: {
 						method: 'POST',
-						url: '/jobs',
+						url: '/integrations/n8n/jobs',
 					},
 				},
 			},
@@ -38,7 +38,7 @@ export const jobDescription: INodeProperties[] = [
 				routing: {
 					request: {
 						method: 'GET',
-						url: '/jobs',
+						url: '/integrations/n8n/jobs',
 					},
 					output: listItemsOutput,
 				},
@@ -51,7 +51,7 @@ export const jobDescription: INodeProperties[] = [
 				routing: {
 					request: {
 						method: 'GET',
-						url: '=/jobs/{{$parameter.jobId}}',
+						url: '=/integrations/n8n/jobs/{{$parameter.jobId}}',
 					},
 				},
 			},
@@ -63,7 +63,7 @@ export const jobDescription: INodeProperties[] = [
 				routing: {
 					request: {
 						method: 'GET',
-						url: '/jobs',
+						url: '/integrations/n8n/jobs',
 						qs: {
 							search: '={{ $parameter.title }}',
 							limit: 50,
@@ -90,7 +90,7 @@ export const jobDescription: INodeProperties[] = [
 				routing: {
 					request: {
 						method: 'GET',
-						url: '=/jobs/{{$parameter.jobId}}/applications',
+						url: '=/integrations/n8n/jobs/{{$parameter.jobId}}/applications',
 					},
 					output: listItemsOutput,
 				},

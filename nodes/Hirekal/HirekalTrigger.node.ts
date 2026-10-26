@@ -11,12 +11,11 @@ import {
 	type JsonObject,
 } from 'n8n-workflow';
 import { HIREKAL_API_BASE_URL } from './constants';
+import { isHirekalConnectivityTest } from './postTriggerWebhook';
 
 const CREDENTIAL = 'hirekalOAuth2Api';
 
 type TriggerStaticData = {
-	jobId?: string;
-	jobIds?: string[];
 	webhookUrl?: string;
 	webhookSecret?: string;
 	includePayloadDetails?: boolean;
@@ -49,7 +48,7 @@ export class HirekalTrigger implements INodeType {
 		properties: [
 			{
 				displayName:
-					'Activating this workflow subscribes every current job to this trigger. Deactivating unsubscribes them. Jobs created later are included the next time you activate the workflow. This replaces any webhook URL already saved on those jobs.',
+					'Activating this workflow registers one organization webhook URL with Hirekal. New applications for any job in the org are delivered to this trigger. Deactivating clears that subscription. Per-job webhook settings in Hirekal are not changed.',
 				name: 'notice',
 				type: 'notice',
 				default: '',
@@ -68,20 +67,36 @@ export class HirekalTrigger implements INodeType {
 	webhookMethods = {
 		default: {
 			async checkExists(this: IHookFunctions): Promise<boolean> {
-				// "Test this trigger" must call create so Hirekal posts the subscribe event.
 				if (this.getMode() === 'manual') {
 					return false;
 				}
 				const staticData = this.getWorkflowStaticData('node') as TriggerStaticData;
 				const includePayloadDetails = this.getNodeParameter('includePayloadDetails') as boolean;
 				const webhookUrl = this.getNodeWebhookUrl('default');
-				const jobIds = await listAllJobIds(this);
+
+				if (!staticData.webhookSecret || staticData.webhookUrl !== webhookUrl) {
+					return false;
+				}
+				if (staticData.includePayloadDetails !== includePayloadDetails) {
+					return false;
+				}
+
+				let subscription: IDataObject;
+				try {
+					subscription = (await hirekalApiRequest(
+						this,
+						'GET',
+						'/integrations/n8n/webhook',
+						{ qs: { url: webhookUrl } },
+					)) as IDataObject;
+				} catch {
+					return false;
+				}
 
 				return (
-					sameIds(staticData.jobIds, jobIds) &&
-					staticData.webhookUrl === webhookUrl &&
-					staticData.includePayloadDetails === includePayloadDetails &&
-					Boolean(staticData.webhookSecret)
+					subscription.webhookSubscribed === true &&
+					subscription.webhookUrl === webhookUrl &&
+					subscription.includePayloadDetails === includePayloadDetails
 				);
 			},
 
@@ -89,35 +104,22 @@ export class HirekalTrigger implements INodeType {
 				const staticData = this.getWorkflowStaticData('node') as TriggerStaticData;
 				const includePayloadDetails = this.getNodeParameter('includePayloadDetails') as boolean;
 				const webhookUrl = this.getNodeWebhookUrl('default') as string;
-				const jobIds = await listAllJobIds(this);
-				const previousJobIds = subscribedJobIds(staticData);
-
-				for (const jobId of previousJobIds) {
-					if (!jobIds.includes(jobId)) {
-						await disableJobWebhook(this, jobId);
-					}
-				}
 
 				staticData.webhookSecret = staticData.webhookSecret ?? randomBytes(32).toString('hex');
 				staticData.webhookUrl = webhookUrl;
 				staticData.includePayloadDetails = includePayloadDetails;
-				staticData.jobIds = [];
 
-				for (const jobId of jobIds) {
-					try {
-						await hirekalApiRequest(this, 'PATCH', `/jobs/${jobId}/webhook`, {
-							body: {
-								url: webhookUrl,
-								secret: staticData.webhookSecret,
-								enabled: true,
-								triggers: { newApplication: true },
-								includePayloadDetails,
-							},
-						});
-					} catch (error) {
-						throw new NodeApiError(this.getNode(), error as JsonObject);
-					}
-					staticData.jobIds.push(jobId);
+				try {
+					await hirekalApiRequest(this, 'PUT', '/integrations/n8n/webhook', {
+						body: {
+							url: webhookUrl,
+							secret: staticData.webhookSecret,
+							includePayloadDetails,
+							subscribed: true,
+						},
+					});
+				} catch (error) {
+					throw new NodeApiError(this.getNode(), error as JsonObject);
 				}
 
 				if (this.getMode() !== 'manual') {
@@ -126,7 +128,6 @@ export class HirekalTrigger implements INodeType {
 							body: {
 								event: 'WORKFLOW_SUBSCRIBED',
 								webhookUrl,
-								jobIds,
 							},
 						});
 					} catch (error) {
@@ -134,32 +135,33 @@ export class HirekalTrigger implements INodeType {
 					}
 				}
 
-				delete staticData.jobId;
 				return true;
 			},
 
 			async delete(this: IHookFunctions): Promise<boolean> {
 				const staticData = this.getWorkflowStaticData('node') as TriggerStaticData;
-				const jobIds = subscribedJobIds(staticData);
+				const webhookUrl =
+					staticData.webhookUrl ?? (this.getNodeWebhookUrl('default') as string);
 
 				try {
 					await hirekalApiRequest(this, 'POST', '/n8n/workflow-events', {
 						body: {
 							event: 'WORKFLOW_UNPUBLISHED',
-							webhookUrl: staticData.webhookUrl,
-							jobIds,
+							webhookUrl,
 						},
 					});
 				} catch (error) {
 					throw new NodeApiError(this.getNode(), error as JsonObject);
 				}
 
-				for (const jobId of jobIds) {
-					await disableJobWebhook(this, jobId);
+				try {
+					await hirekalApiRequest(this, 'DELETE', '/integrations/n8n/webhook', {
+						body: { url: webhookUrl },
+					});
+				} catch (error) {
+					throw new NodeApiError(this.getNode(), error as JsonObject);
 				}
 
-				delete staticData.jobId;
-				delete staticData.jobIds;
 				delete staticData.webhookUrl;
 				delete staticData.webhookSecret;
 				delete staticData.includePayloadDetails;
@@ -177,8 +179,8 @@ export class HirekalTrigger implements INodeType {
 			return {};
 		}
 
-		const body = this.getBodyData();
-		if (body.event === 'TEST') {
+		const body = this.getBodyData() as IDataObject;
+		if (isHirekalConnectivityTest(body)) {
 			return {};
 		}
 
@@ -188,43 +190,9 @@ export class HirekalTrigger implements INodeType {
 	}
 }
 
-async function listAllJobIds(context: IHookFunctions): Promise<string[]> {
-	const ids: string[] = [];
-	const limit = 100;
-	let page = 1;
-	let total = Number.POSITIVE_INFINITY;
-
-	while (ids.length < total) {
-		let response: IDataObject;
-		try {
-			response = (await hirekalApiRequest(context, 'GET', '/jobs', {
-				qs: { status: 'ALL', page, limit },
-			})) as IDataObject;
-		} catch (error) {
-			throw new NodeApiError(context.getNode(), error as JsonObject);
-		}
-
-		const items = Array.isArray(response.items) ? response.items : [];
-		total = typeof response.total === 'number' ? response.total : items.length;
-
-		for (const item of items) {
-			if (item && typeof item === 'object' && 'id' in item && typeof item.id === 'string') {
-				ids.push(item.id);
-			}
-		}
-
-		if (items.length === 0) {
-			break;
-		}
-		page += 1;
-	}
-
-	return ids;
-}
-
 async function hirekalApiRequest(
 	context: IHookFunctions,
-	method: 'GET' | 'PATCH' | 'POST',
+	method: 'GET' | 'PUT' | 'POST' | 'DELETE',
 	path: string,
 	options?: { body?: IDataObject; qs?: IDataObject },
 ): Promise<unknown> {
@@ -237,60 +205,10 @@ async function hirekalApiRequest(
 	});
 }
 
-function subscribedJobIds(staticData: TriggerStaticData): string[] {
-	const ids = [...(staticData.jobIds ?? [])];
-	if (staticData.jobId && !ids.includes(staticData.jobId)) {
-		ids.push(staticData.jobId);
-	}
-	return ids;
-}
-
-function sameIds(stored: string[] | undefined, current: string[]): boolean {
-	if (!stored || stored.length !== current.length) {
-		return false;
-	}
-	const left = [...stored].sort();
-	const right = [...current].sort();
-	return left.every((id, index) => id === right[index]);
-}
-
-async function disableJobWebhook(context: IHookFunctions, jobId: string): Promise<void> {
-	try {
-		await hirekalApiRequest(context, 'POST', `/jobs/${jobId}/webhook/disable`);
-	} catch (error) {
-		const statusCode = errorStatusCode(error);
-		if (statusCode === 404) {
-			return;
-		}
-		throw new NodeApiError(context.getNode(), error as JsonObject);
-	}
-}
-
 function headerValue(headers: IDataObject, name: string): string {
 	const value = headers[name] ?? headers[name.toLowerCase()];
 	if (Array.isArray(value)) {
 		return String(value[0] ?? '');
 	}
 	return value === undefined || value === null ? '' : String(value);
-}
-
-function errorStatusCode(error: unknown): number | undefined {
-	if (!error || typeof error !== 'object') {
-		return undefined;
-	}
-	const candidate = error as {
-		statusCode?: number;
-		httpCode?: number | string;
-		response?: { status?: number };
-	};
-	if (typeof candidate.statusCode === 'number') {
-		return candidate.statusCode;
-	}
-	if (typeof candidate.response?.status === 'number') {
-		return candidate.response.status;
-	}
-	if (typeof candidate.httpCode === 'number') {
-		return candidate.httpCode;
-	}
-	return undefined;
 }

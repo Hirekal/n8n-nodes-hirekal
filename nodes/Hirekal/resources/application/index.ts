@@ -21,7 +21,7 @@ export const applicationDescription: INodeProperties[] = [
 				routing: {
 					request: {
 						method: 'GET',
-						url: '=/applications/{{$parameter.applicationId}}',
+						url: '=/integrations/n8n/applications/{{$parameter.applicationId}}',
 					},
 				},
 			},
