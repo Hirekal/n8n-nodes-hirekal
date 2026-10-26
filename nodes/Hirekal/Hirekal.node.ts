@@ -24,6 +24,7 @@ export class Hirekal implements INodeType {
 			headers: {
 				Accept: 'application/json',
 				'Content-Type': 'application/json',
+				'X-N8n-Workflow-Id': '={{ $workflow.id }}',
 			},
 		},
 		properties: [

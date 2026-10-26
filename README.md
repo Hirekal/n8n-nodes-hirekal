@@ -102,7 +102,7 @@ Hirekal sends `event: "TEST"` to validate the URL while activating. The trigger 
 
 ### Test this trigger
 
-**Test this trigger** only registers the org webhook (`PUT /integrations/n8n/webhook`). It does not inject a sample application. To see real data in the workflow, submit an application on the public apply page (or use n8n’s mock-data panel for expressions).
+**Test this trigger** uses n8n’s **`webhook-test`** URL and manual hook mode. The node calls `PUT /integrations/n8n/webhook` with `testRegistration: true` and `subscribed: false` (no `WORKFLOW_SUBSCRIBED`). Hirekal can use that flag to POST a sample `NEW_APPLICATION` to the test URL (backend support required). Production publish uses the normal webhook URL, `subscribed: true`, and `WORKFLOW_SUBSCRIBED`.
 
 The API must accept the n8n OAuth access token on `PUT /integrations/n8n/webhook`. If activation fails with 401, the credential is connected in n8n but Hirekal is still allowing only recruiter login JWTs.
 

@@ -11,6 +11,12 @@ import {
 	type JsonObject,
 } from 'n8n-workflow';
 import { HIREKAL_API_BASE_URL } from './constants';
+import { readN8nWorkflowId } from './n8nWorkflowMeta.util';
+import {
+	isTestTriggerRegistration,
+	N8N_TEST_LISTENER_READY_DELAY_MS,
+	shouldSkipN8nWorkflowEvents,
+} from './n8nTestWebhook.util';
 import { isHirekalConnectivityTest } from './postTriggerWebhook';
 
 const CREDENTIAL = 'hirekalOAuth2Api';
@@ -104,6 +110,8 @@ export class HirekalTrigger implements INodeType {
 				const staticData = this.getWorkflowStaticData('node') as TriggerStaticData;
 				const includePayloadDetails = this.getNodeParameter('includePayloadDetails') as boolean;
 				const webhookUrl = this.getNodeWebhookUrl('default') as string;
+				const testRegistration = isTestTriggerRegistration(this, webhookUrl);
+				const workflowMeta = readN8nWorkflowId(this);
 
 				staticData.webhookSecret = staticData.webhookSecret ?? randomBytes(32).toString('hex');
 				staticData.webhookUrl = webhookUrl;
@@ -115,24 +123,35 @@ export class HirekalTrigger implements INodeType {
 							url: webhookUrl,
 							secret: staticData.webhookSecret,
 							includePayloadDetails,
-							subscribed: true,
+							subscribed: !testRegistration,
+							testRegistration,
+							...workflowMeta,
 						},
 					});
 				} catch (error) {
 					throw new NodeApiError(this.getNode(), error as JsonObject);
 				}
 
-				if (this.getMode() !== 'manual') {
+				if (!shouldSkipN8nWorkflowEvents(webhookUrl)) {
 					try {
 						await hirekalApiRequest(this, 'POST', '/n8n/workflow-events', {
 							body: {
 								event: 'WORKFLOW_SUBSCRIBED',
 								webhookUrl,
+								...workflowMeta,
 							},
 						});
 					} catch (error) {
 						throw new NodeApiError(this.getNode(), error as JsonObject);
 					}
+				}
+
+				if (testRegistration) {
+					scheduleTestSampleDelivery(this, {
+						webhookUrl,
+						secret: staticData.webhookSecret as string,
+						includePayloadDetails,
+					});
 				}
 
 				return true;
@@ -142,16 +161,20 @@ export class HirekalTrigger implements INodeType {
 				const staticData = this.getWorkflowStaticData('node') as TriggerStaticData;
 				const webhookUrl =
 					staticData.webhookUrl ?? (this.getNodeWebhookUrl('default') as string);
+				const workflowMeta = readN8nWorkflowId(this);
 
-				try {
-					await hirekalApiRequest(this, 'POST', '/n8n/workflow-events', {
-						body: {
-							event: 'WORKFLOW_UNPUBLISHED',
-							webhookUrl,
-						},
-					});
-				} catch (error) {
-					throw new NodeApiError(this.getNode(), error as JsonObject);
+				if (!shouldSkipN8nWorkflowEvents(webhookUrl)) {
+					try {
+						await hirekalApiRequest(this, 'POST', '/n8n/workflow-events', {
+							body: {
+								event: 'WORKFLOW_UNPUBLISHED',
+								webhookUrl,
+								...workflowMeta,
+							},
+						});
+					} catch (error) {
+						throw new NodeApiError(this.getNode(), error as JsonObject);
+					}
 				}
 
 				try {
@@ -203,6 +226,31 @@ async function hirekalApiRequest(
 		body: options?.body,
 		json: true,
 	});
+}
+
+function scheduleTestSampleDelivery(
+	context: IHookFunctions,
+	params: {
+		webhookUrl: string;
+		secret: string;
+		includePayloadDetails: boolean;
+	},
+): void {
+	const { webhookUrl, secret, includePayloadDetails } = params;
+	void (async () => {
+		await new Promise((resolve) => setTimeout(resolve, N8N_TEST_LISTENER_READY_DELAY_MS));
+		try {
+			await hirekalApiRequest(context, 'POST', '/integrations/n8n/webhook/test-sample', {
+				body: {
+					url: webhookUrl,
+					secret,
+					includePayloadDetails,
+				},
+			});
+		} catch {
+			// Slow hosts: user can run test trigger again.
+		}
+	})();
 }
 
 function headerValue(headers: IDataObject, name: string): string {
