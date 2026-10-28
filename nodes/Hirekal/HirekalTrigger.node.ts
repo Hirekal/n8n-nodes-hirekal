@@ -21,22 +21,30 @@ import { isHirekalConnectivityTest } from './postTriggerWebhook';
 
 const CREDENTIAL = 'hirekalOAuth2Api';
 
+export const HIREKAL_WEBHOOK_EVENTS = {
+	NEW_APPLICATION: 'NEW_APPLICATION',
+	STAGE_CHANGE: 'STAGE_CHANGE',
+} as const;
+
+export type HirekalWebhookEvent =
+	(typeof HIREKAL_WEBHOOK_EVENTS)[keyof typeof HIREKAL_WEBHOOK_EVENTS];
+
 type TriggerStaticData = {
 	webhookUrl?: string;
 	webhookSecret?: string;
 	includePayloadDetails?: boolean;
+	events?: HirekalWebhookEvent[];
 };
 
 export class HirekalTrigger implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Hirekal Trigger',
 		name: 'hirekalTrigger',
-		icon: { light: 'file:hirekal.svg', dark: 'file:hirekal.dark.svg' },
+		icon: { light: 'file:hirekal.png', dark: 'file:hirekal.png' },
 		group: ['trigger'],
-		version: 1,
-		subtitle: 'On any application submit',
-		description:
-			'Fires when a candidate submits an application for any job in the organization. The payload includes the job, the candidate, and optionally answers and transcripts after AI processing finishes.',
+		version: 2,
+		subtitle: '={{$parameter["events"].join(", ")}}',
+		description: 'Handle Hirekal organization webhook events',
 		defaults: {
 			name: 'Hirekal Trigger',
 		},
@@ -54,18 +62,43 @@ export class HirekalTrigger implements INodeType {
 		properties: [
 			{
 				displayName:
-					'Activating this workflow registers one organization webhook URL with Hirekal. New applications for any job in the org are delivered to this trigger. Deactivating clears that subscription. Per-job webhook settings in Hirekal are not changed.',
+					'Activating registers this workflow URL with Hirekal for the selected events. Deactivating clears that subscription. Per-job webhook settings in Hirekal are not changed.',
 				name: 'notice',
 				type: 'notice',
 				default: '',
+			},
+			{
+				displayName: 'Events',
+				name: 'events',
+				type: 'multiOptions',
+				required: true,
+				default: [HIREKAL_WEBHOOK_EVENTS.NEW_APPLICATION],
+				description: 'The Hirekal events to listen for',
+				options: [
+					{
+						name: 'Application Submitted',
+						value: HIREKAL_WEBHOOK_EVENTS.NEW_APPLICATION,
+						description: 'When a candidate submits an application',
+					},
+					{
+						name: 'Stage Change',
+						value: HIREKAL_WEBHOOK_EVENTS.STAGE_CHANGE,
+						description: 'When an application moves to another pipeline stage',
+					},
+				],
 			},
 			{
 				displayName: 'Include Payload Details',
 				name: 'includePayloadDetails',
 				type: 'boolean',
 				default: true,
+				displayOptions: {
+					show: {
+						events: [HIREKAL_WEBHOOK_EVENTS.NEW_APPLICATION],
+					},
+				},
 				description:
-					'Whether Hirekal includes answers, transcripts, and metrics. Hirekal may wait until AI processing finishes before sending.',
+					'For application submitted events: include answers, transcripts, and metrics. Hirekal may wait until AI processing finishes before sending.',
 			},
 		],
 	};
@@ -77,10 +110,14 @@ export class HirekalTrigger implements INodeType {
 					return false;
 				}
 				const staticData = this.getWorkflowStaticData('node') as TriggerStaticData;
-				const includePayloadDetails = this.getNodeParameter('includePayloadDetails') as boolean;
+				const events = readSelectedEvents(this);
+				const includePayloadDetails = readIncludePayloadDetails(this, events);
 				const webhookUrl = this.getNodeWebhookUrl('default');
 
 				if (!staticData.webhookSecret || staticData.webhookUrl !== webhookUrl) {
+					return false;
+				}
+				if (!sameEventList(staticData.events, events)) {
 					return false;
 				}
 				if (staticData.includePayloadDetails !== includePayloadDetails) {
@@ -99,22 +136,26 @@ export class HirekalTrigger implements INodeType {
 					return false;
 				}
 
+				const storedEvents = normalizeEventsList(subscription.webhookEvents);
 				return (
 					subscription.webhookSubscribed === true &&
 					subscription.webhookUrl === webhookUrl &&
-					subscription.includePayloadDetails === includePayloadDetails
+					subscription.includePayloadDetails === includePayloadDetails &&
+					sameEventList(storedEvents, events)
 				);
 			},
 
 			async create(this: IHookFunctions): Promise<boolean> {
 				const staticData = this.getWorkflowStaticData('node') as TriggerStaticData;
-				const includePayloadDetails = this.getNodeParameter('includePayloadDetails') as boolean;
+				const events = readSelectedEvents(this);
+				const includePayloadDetails = readIncludePayloadDetails(this, events);
 				const webhookUrl = this.getNodeWebhookUrl('default') as string;
 				const testRegistration = isTestTriggerRegistration(this, webhookUrl);
 				const workflowMeta = readN8nWorkflowId(this);
 
 				staticData.webhookSecret = staticData.webhookSecret ?? randomBytes(32).toString('hex');
 				staticData.webhookUrl = webhookUrl;
+				staticData.events = events;
 				staticData.includePayloadDetails = includePayloadDetails;
 
 				try {
@@ -125,6 +166,7 @@ export class HirekalTrigger implements INodeType {
 							includePayloadDetails,
 							subscribed: !testRegistration,
 							testRegistration,
+							events,
 							...workflowMeta,
 						},
 					});
@@ -151,6 +193,7 @@ export class HirekalTrigger implements INodeType {
 						webhookUrl,
 						secret: staticData.webhookSecret as string,
 						includePayloadDetails,
+						events,
 					});
 				}
 
@@ -188,6 +231,7 @@ export class HirekalTrigger implements INodeType {
 				delete staticData.webhookUrl;
 				delete staticData.webhookSecret;
 				delete staticData.includePayloadDetails;
+				delete staticData.events;
 				return true;
 			},
 		},
@@ -207,10 +251,52 @@ export class HirekalTrigger implements INodeType {
 			return {};
 		}
 
+		const events = readSelectedEvents(this);
+		const eventName = body.event === undefined ? '' : String(body.event);
+		if (eventName && !events.includes(eventName as HirekalWebhookEvent)) {
+			return {};
+		}
+
 		return {
 			workflowData: [this.helpers.returnJsonArray(body)],
 		};
 	}
+}
+
+function readSelectedEvents(
+	context: IHookFunctions | IWebhookFunctions,
+): HirekalWebhookEvent[] {
+	const raw = context.getNodeParameter('events', 0) as string[] | string;
+	return normalizeEventsList(raw);
+}
+
+function normalizeEventsList(raw: unknown): HirekalWebhookEvent[] {
+	const list = Array.isArray(raw) ? raw : raw ? [String(raw)] : [];
+	const allowed = new Set<string>(Object.values(HIREKAL_WEBHOOK_EVENTS));
+	const unique = [
+		...new Set(
+			list
+				.map((item) => String(item))
+				.filter((item): item is HirekalWebhookEvent => allowed.has(item)),
+		),
+	];
+	return unique.length > 0 ? unique : [HIREKAL_WEBHOOK_EVENTS.NEW_APPLICATION];
+}
+
+function sameEventList(a: unknown, b: HirekalWebhookEvent[]): boolean {
+	const left = [...normalizeEventsList(a)].sort();
+	const right = [...b].sort();
+	return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function readIncludePayloadDetails(
+	context: IHookFunctions,
+	events: HirekalWebhookEvent[],
+): boolean {
+	if (!events.includes(HIREKAL_WEBHOOK_EVENTS.NEW_APPLICATION)) {
+		return false;
+	}
+	return context.getNodeParameter('includePayloadDetails', 0) as boolean;
 }
 
 async function hirekalApiRequest(
@@ -234,21 +320,28 @@ function scheduleTestSampleDelivery(
 		webhookUrl: string;
 		secret: string;
 		includePayloadDetails: boolean;
+		events: HirekalWebhookEvent[];
 	},
 ): void {
-	const { webhookUrl, secret, includePayloadDetails } = params;
+	const { webhookUrl, secret, includePayloadDetails, events } = params;
 	void (async () => {
 		await new Promise((resolve) => setTimeout(resolve, N8N_TEST_LISTENER_READY_DELAY_MS));
-		try {
-			await hirekalApiRequest(context, 'POST', '/integrations/n8n/webhook/test-sample', {
-				body: {
-					url: webhookUrl,
-					secret,
-					includePayloadDetails,
-				},
-			});
-		} catch {
-			// Slow hosts: user can run test trigger again.
+		for (let index = 0; index < events.length; index++) {
+			if (index > 0) {
+				await new Promise((resolve) => setTimeout(resolve, 500));
+			}
+			try {
+				await hirekalApiRequest(context, 'POST', '/integrations/n8n/webhook/test-sample', {
+					body: {
+						url: webhookUrl,
+						secret,
+						includePayloadDetails,
+						events: [events[index]],
+					},
+				});
+			} catch {
+				// Slow hosts: user can run test trigger again.
+			}
 		}
 	})();
 }

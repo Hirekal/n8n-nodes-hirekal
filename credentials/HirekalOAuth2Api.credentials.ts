@@ -8,8 +8,8 @@ export class HirekalOAuth2Api implements ICredentialType {
 	displayName = 'Hirekal OAuth2 API';
 
 	icon = {
-		light: 'file:../nodes/Hirekal/hirekal.svg',
-		dark: 'file:../nodes/Hirekal/hirekal.dark.svg',
+		light: 'file:../nodes/Hirekal/hirekal.png',
+		dark: 'file:../nodes/Hirekal/hirekal.png',
 	} as const;
 
 	documentationUrl = 'https://github.com/Hirekal/n8n-nodes-hirekal#credentials';

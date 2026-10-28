@@ -2,16 +2,16 @@
 
 This is an n8n community node. It lets you create and look up [Hirekal](https://hirekal.com) jobs and applications from an n8n workflow, and start a workflow when a candidate submits an application.
 
-Hirekal is a hiring platform. This node calls the Hirekal API (`/api/v1`) with OAuth2. **Hirekal Trigger** registers one organization webhook and receives `NEW_APPLICATION` events for any job in the org. See [Trigger: application submitted](#trigger-application-submitted).
-
-The repository overview is in the [root README](../README.md).
+Hirekal is a hiring platform. This node calls the Hirekal API (`/api/v1`) with OAuth2. **Hirekal Trigger** is the only trigger node; use **Events** (multi-select) for application submitted and/or stage change. See [Hirekal Trigger](#hirekal-trigger).
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/sustainable-use-license/) workflow automation platform.
+
+The node package calls the production Hirekal API at `https://api.hirekal.com/api/v1` by default. This package does not use an `.env` file; API host and OAuth URLs are set in the node source. **Client ID** and **Client Secret** are entered in the n8n credential UI.
 
 [Installation](#installation)
 [Operations](#operations)
 [Credentials](#credentials)
-[Trigger: application submitted](#trigger-application-submitted)
+[Hirekal Trigger](#hirekal-trigger)
 [Compatibility](#compatibility)
 [Development](#development)
 [Resources](#resources)
@@ -35,21 +35,19 @@ npm run dev
 
 `npm run dev` builds the node and starts n8n with it loaded. The editor is at `http://localhost:5678`.
 
-This package does not use an `.env` file. API host and OAuth URLs are set in the node. Client ID and Client Secret are entered in the n8n credential.
-
 ## Operations
 
-The node calls `http://localhost:3000/api/v1` during local development.
+All paths are under `https://api.hirekal.com/api/v1`.
 
 ### Job
 
 | Operation | What it does | HTTP |
 |-----------|----------------|------|
-| Create | Create a job. Hirekal adds default questions, application fields, and pipeline stages. | `POST /jobs` |
-| Get Many | List or search jobs. Supports status, search, sort, order, and pagination. | `GET /jobs` |
-| Get | Get one job by UUID. | `GET /jobs/:id` |
-| Get by Name | Search by title, then keep an exact or partial match from the first 50 results. There is no exact-name endpoint. | `GET /jobs?search={title}&limit=50` |
-| Get Applications | List applications for a job. Supports stage, search, sort, and pagination. | `GET /jobs/:jobId/applications` |
+| Create | Create a job. Hirekal adds default questions, application fields, and pipeline stages. | `POST /integrations/n8n/jobs` |
+| Get Many | List or search jobs. Supports status, search, sort, order, and pagination. | `GET /integrations/n8n/jobs` |
+| Get | Get one job by UUID. | `GET /integrations/n8n/jobs/:id` |
+| Get by Name | Search by title, then keep an exact or partial match from the first 50 results. There is no exact-name endpoint. | `GET /integrations/n8n/jobs?search={title}&limit=50` |
+| Get Applications | List applications for a job. Supports stage, search, sort, and pagination. | `GET /integrations/n8n/jobs/:jobId/applications` |
 
 **Create** requires **Title** and **Company**. Location, employment type, status, company website, and internal title are optional. Status values are `ACTIVE`, `PAUSED`, and `ARCHIVED`.
 
@@ -57,7 +55,7 @@ The node calls `http://localhost:3000/api/v1` during local development.
 
 | Operation | What it does | HTTP |
 |-----------|----------------|------|
-| Get | Get one application by UUID, scoped to the signed-in organization. | `GET /applications/:id` |
+| Get | Get one application by UUID, scoped to the signed-in organization. | `GET /integrations/n8n/applications/:id` |
 
 A typical follow-up to the submit trigger is **Application → Get**, using `{{ $json.application.id }}` from the webhook body.
 
@@ -65,44 +63,55 @@ A typical follow-up to the submit trigger is **Application → Get**, using `{{ 
 
 The node uses **Hirekal OAuth2 API** (authorization code).
 
-1. In the Hirekal API (`core/apps/api-app-v2/.env`), set the OAuth client. Restart the API after changing these:
+### Client ID and Client Secret
 
-   - `N8N_OAUTH_CLIENT_ID`
-   - `N8N_OAUTH_CLIENT_SECRET`
-   - `N8N_OAUTH_REDIRECT_URIS` — include `http://localhost:5678/rest/oauth2-credential/callback`
+Hirekal runs a single OAuth app for n8n. **Client ID** and **Client Secret** are issued by Hirekal (not by n8n). Use the values your Hirekal account or setup docs provide—the same pair configured on the Hirekal API as `N8N_OAUTH_CLIENT_ID` and `N8N_OAUTH_CLIENT_SECRET`.
 
-2. In n8n, create a **Hirekal OAuth2 API** credential.
-3. Enter that same **Client ID** and **Client Secret**.
-4. Click **Connect** and finish the Hirekal login.
+### Setup in n8n
 
-The credential stores the access token. Hidden defaults point at:
+1. In n8n, create a **Hirekal OAuth2 API** credential.
+2. Enter **Client ID** and **Client Secret**.
+3. Click **Connect** and sign in to Hirekal. The token is scoped to the organization of the user who logs in.
+4. Use the same credential on **Hirekal** and **Hirekal Trigger** nodes.
 
-- Authorize: `http://localhost:3000/api/v1/n8n/oauth/authorize`
-- Token: `http://localhost:3000/api/v1/n8n/oauth/token`
+Hidden OAuth URLs in the credential (production):
 
-Create the credential again if those URLs change. n8n copies hidden defaults only when the credential is created.
+- Authorize: `https://api.hirekal.com/api/v1/n8n/oauth/authorize`
+- Token: `https://api.hirekal.com/api/v1/n8n/oauth/token`
 
-n8n does not call `POST /api/v1/n8n/oauth/revoke` when a credential is disconnected.
+n8n copies hidden defaults only when the credential is created. Recreate the credential after OAuth URL changes.
 
-Protected Hirekal routes must accept this OAuth access token. A recruiter login JWT and the n8n OAuth token are different. If a node run returns `401` with "Authorization failed", the API rejected the OAuth token.
+On the Hirekal API, `N8N_OAUTH_REDIRECT_URIS` must allow your n8n callback, for example:
 
-## Trigger: application submitted
+- n8n Cloud: `https://oauth.n8n.cloud/oauth2/callback`
+- Local n8n: `http://localhost:5678/rest/oauth2-credential/callback`
 
-Use **Hirekal Trigger**. It starts the workflow when a candidate submits an application for any current job in the organization.
+n8n does not call `POST /api/v1/n8n/oauth/revoke` when a credential is disconnected. In Hirekal, **Add-ons → Integrations → n8n → Disconnect** revokes OAuth tokens for your organization.
+
+A recruiter login JWT and the n8n OAuth access token are different. If a node run returns `401`, the API rejected the OAuth token or OAuth is not configured on the server.
+
+## Hirekal Trigger
+
+Use **Hirekal Trigger** (**Triggers (1)** in the Hirekal panel). Choose one or more **Events** (same pattern as Stripe / GitHub triggers):
+
+| Event | Hirekal `event` | When it runs |
+|--------|-----------------|--------------|
+| **Application Submitted** | `NEW_APPLICATION` | Candidate submits on any org job |
+| **Stage Change** | `STAGE_CHANGE` | Application moves to another pipeline stage |
 
 1. Add **Hirekal Trigger** as the first node.
-2. Select the same **Hirekal OAuth2 API** credential.
+2. Select **Events** and the **Hirekal OAuth2 API** credential.
 3. Activate the workflow.
 
-Activation registers this workflow's URL (`PUT /integrations/n8n/webhook`) in Hirekal. Each workflow URL is stored separately, so multiple active workflows in the same org can all receive applications. Deactivating clears only this URL (`DELETE /integrations/n8n/webhook` with `{ "url": "..." }`). Per-job webhook settings in Hirekal are not changed. New jobs are included automatically—no re-activation needed.
+Activation registers this workflow URL (`PUT /integrations/n8n/webhook` with `events: [...]`). One URL can subscribe to multiple events. Deactivating clears only that URL.
 
-The public apply page does not call n8n. After the trigger is active, a public submit makes Hirekal POST `NEW_APPLICATION` here. The body includes `job` and `application`. **Include Payload Details** also asks for answers, transcripts, and metrics. Hirekal may wait until AI processing finishes before sending that richer payload.
+**Include Payload Details** applies to **Application Submitted** when that event is selected.
 
-Hirekal sends `event: "TEST"` to validate the URL while activating. The trigger ignores that ping so activating does not start a workflow run. A real submit arrives as `event: "NEW_APPLICATION"`.
+Hirekal sends `event: "TEST"` while activating; the trigger ignores it. Live payloads include `event: "NEW_APPLICATION"` or `"STAGE_CHANGE"`.
 
 ### Test this trigger
 
-**Test this trigger** uses n8n’s **`webhook-test`** URL and manual hook mode. The node calls `PUT /integrations/n8n/webhook` with `testRegistration: true` and `subscribed: false` (no `WORKFLOW_SUBSCRIBED`). Hirekal can use that flag to POST a sample `NEW_APPLICATION` to the test URL (backend support required). Production publish uses the normal webhook URL, `subscribed: true`, and `WORKFLOW_SUBSCRIBED`.
+**Test this trigger** POSTs a sample payload for each selected event to the n8n **webhook-test** URL.
 
 The API must accept the n8n OAuth access token on `PUT /integrations/n8n/webhook`. If activation fails with 401, the credential is connected in n8n but Hirekal is still allowing only recruiter login JWTs.
 
@@ -111,6 +120,8 @@ The API must accept the n8n OAuth access token on `PUT /integrations/n8n/webhook
 Tested with n8n 2.42. That n8n release requires Node.js `>=24`. Use the Node version in `.nvmrc` (`24`) for `npm run dev`.
 
 ## Development
+
+To point the node at a local Hirekal API, change `HIREKAL_API_BASE_URL` in `nodes/Hirekal/constants.ts` and the OAuth defaults in `credentials/HirekalOAuth2Api.credentials.ts` to `http://localhost:3000/api/v1`, then rebuild. Set matching `N8N_OAUTH_*` values in your local `api-app-v2` environment and use the same Client ID and Secret in n8n.
 
 | Script | Purpose |
 |--------|---------|
@@ -126,9 +137,4 @@ Tested with n8n 2.42. That n8n release requires Node.js `>=24`. Use the Node ver
 
 ## Version history
 
-### 0.1.0
-
-* Job operations: Create, Get Many, Get, Get by Name, Get Applications.
-* Application operation: Get.
-* Hirekal Trigger for application submit.
-* OAuth2 credential for the local Hirekal API.
+See [CHANGELOG.md](./CHANGELOG.md).

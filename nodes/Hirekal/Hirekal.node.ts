@@ -7,7 +7,7 @@ export class Hirekal implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Hirekal',
 		name: 'hirekal',
-		icon: { light: 'file:hirekal.svg', dark: 'file:hirekal.dark.svg' },
+		icon: { light: 'file:hirekal.png', dark: 'file:hirekal.png' },
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
