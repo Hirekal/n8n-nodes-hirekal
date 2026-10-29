@@ -5,8 +5,10 @@ services:
     ports:
       - "5678:5678"
     environment:
-      N8N_PROTOCOL: http
-      N8N_SECURE_COOKIE: "false"
+      N8N_PROTOCOL: https
+      N8N_HOST: n8n.hirekal.com
+      N8N_EDITOR_BASE_URL: https://n8n.hirekal.com
+      N8N_PROXY_HOPS: 1
       N8N_COMMUNITY_PACKAGES_ENABLED: "true"
     volumes:
       - n8n_data:/home/node/.n8n
