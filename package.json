@@ -1,11 +1,16 @@
 {
   "name": "n8n-nodes-hirekal",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "n8n community node for the Hirekal API",
   "license": "MIT",
   "homepage": "https://github.com/Hirekal/n8n-nodes-hirekal",
-  "keywords": ["n8n-community-node-package"],
-  "author": { "name": "Purvang", "email": "purvang.v.spark@gmail.com" },
+  "keywords": [
+    "n8n-community-node-package"
+  ],
+  "author": {
+    "name": "Purvang",
+    "email": "purvang.v.spark@gmail.com"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Hirekal/n8n-nodes-hirekal.git"
@@ -19,11 +24,15 @@
     "release": "n8n-node release",
     "prepublishOnly": "n8n-node prerelease"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "n8n": {
     "n8nNodesApiVersion": 1,
     "strict": true,
-    "credentials": ["dist/credentials/HirekalOAuth2Api.credentials.js"],
+    "credentials": [
+      "dist/credentials/HirekalOAuth2Api.credentials.js"
+    ],
     "nodes": [
       "dist/nodes/Hirekal/Hirekal.node.js",
       "dist/nodes/Hirekal/HirekalTrigger.node.js"
@@ -36,5 +45,7 @@
     "release-it": "^21.1.0",
     "typescript": "5.9.2"
   },
-  "peerDependencies": { "n8n-workflow": "*" }
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  }
 }
