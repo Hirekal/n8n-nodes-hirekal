@@ -1,0 +1,17 @@
+services:
+  n8n:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      N8N_PROTOCOL: ${N8N_PROTOCOL:-https}
+      N8N_HOST: ${N8N_HOST}
+      WEBHOOK_URL: ${WEBHOOK_URL}
+      N8N_PROXY_HOPS: 1
+      N8N_COMMUNITY_PACKAGES_ENABLED: "true"
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  n8n_data:
