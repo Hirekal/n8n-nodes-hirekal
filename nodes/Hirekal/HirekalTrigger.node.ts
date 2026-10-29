@@ -2,6 +2,7 @@ import { randomBytes } from 'crypto';
 import {
 	NodeApiError,
 	NodeConnectionTypes,
+	sleep,
 	type IDataObject,
 	type IHookFunctions,
 	type INodeType,
@@ -98,7 +99,7 @@ export class HirekalTrigger implements INodeType {
 					},
 				},
 				description:
-					'For application received events: include answers, transcripts, and metrics. Hirekal may wait until AI processing finishes before sending.',
+					'Whether application received events include answers, transcripts, and metrics. Hirekal may wait until AI processing finishes before sending.',
 			},
 		],
 	};
@@ -132,7 +133,11 @@ export class HirekalTrigger implements INodeType {
 						'/integrations/n8n/webhook',
 						{ qs: { url: webhookUrl } },
 					)) as IDataObject;
-				} catch {
+				} catch (error) {
+					this.logger.debug(
+						'checkExists: could not verify Hirekal webhook registration',
+						{ error },
+					);
 					return false;
 				}
 
@@ -325,10 +330,10 @@ function scheduleTestSampleDelivery(
 ): void {
 	const { webhookUrl, secret, includePayloadDetails, events } = params;
 	void (async () => {
-		await new Promise((resolve) => setTimeout(resolve, N8N_TEST_LISTENER_READY_DELAY_MS));
+		await sleep(N8N_TEST_LISTENER_READY_DELAY_MS);
 		for (let index = 0; index < events.length; index++) {
 			if (index > 0) {
-				await new Promise((resolve) => setTimeout(resolve, 500));
+				await sleep(500);
 			}
 			try {
 				await hirekalApiRequest(context, 'POST', '/integrations/n8n/webhook/test-sample', {
