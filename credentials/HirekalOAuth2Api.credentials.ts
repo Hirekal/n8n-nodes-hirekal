@@ -25,13 +25,13 @@ export class HirekalOAuth2Api implements ICredentialType {
 			displayName: 'Authorization URL',
 			name: 'authUrl',
 			type: 'hidden',
-			default: 'http://localhost:3000/api/v1/n8n/oauth/authorize',
+			default: 'https://api.hirekal.com/api/v1/n8n/oauth/authorize',
 		},
 		{
 			displayName: 'Access Token URL',
 			name: 'accessTokenUrl',
 			type: 'hidden',
-			default: 'http://localhost:3000/api/v1/n8n/oauth/token',
+			default: 'https://api.hirekal.com/api/v1/n8n/oauth/token',
 		},
 		{
 			displayName: 'Auth URI Query Parameters',

@@ -76,9 +76,9 @@ export class HirekalTrigger implements INodeType {
 				description: 'The Hirekal events to listen for',
 				options: [
 					{
-						name: 'Application Submitted',
+						name: 'Application Received',
 						value: HIREKAL_WEBHOOK_EVENTS.NEW_APPLICATION,
-						description: 'When a candidate submits an application',
+						description: 'When Hirekal receives an application',
 					},
 					{
 						name: 'Stage Change',
@@ -98,7 +98,7 @@ export class HirekalTrigger implements INodeType {
 					},
 				},
 				description:
-					'For application submitted events: include answers, transcripts, and metrics. Hirekal may wait until AI processing finishes before sending.',
+					'For application received events: include answers, transcripts, and metrics. Hirekal may wait until AI processing finishes before sending.',
 			},
 		],
 	};
