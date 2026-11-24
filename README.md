@@ -41,7 +41,7 @@ Install the package `n8n-nodes-hirekal`.
 * **Application Received** (`NEW_APPLICATION`): Hirekal receives an application on any job in the organization.
 * **Stage Change** (`STAGE_CHANGE`): an application moves to another pipeline stage.
 
-Select one or both events on the same trigger. **Include Payload Details** applies only to **Application Received**. When it is on, the payload can include answers, transcripts, and metrics. Hirekal may wait until AI processing finishes before sending.
+Select one or both events on the same trigger. Under **Options**, **Include Payload Details** applies only to **Application Received**. When it is on, the payload can include answers, transcripts, and metrics. Hirekal may wait until AI processing finishes before sending.
 
 ## Credentials
 

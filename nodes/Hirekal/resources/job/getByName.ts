@@ -17,16 +17,25 @@ export const jobGetByNameDescription: INodeProperties[] = [
 		displayOptions: { show: showOnlyForJobGetByName },
 	},
 	{
-		displayName: 'Match',
-		name: 'match',
-		type: 'options',
-		default: 'exact',
-		options: [
-			{ name: 'Exact', value: 'exact' },
-			{ name: 'Contains', value: 'contains' },
-		],
-		description: 'Exact compares the full title. Contains keeps titles that include the text.',
+		displayName: 'Options',
+		name: 'options',
+		type: 'collection',
+		placeholder: 'Add option',
+		default: {},
 		displayOptions: { show: showOnlyForJobGetByName },
+		options: [
+			{
+				displayName: 'Match',
+				name: 'match',
+				type: 'options',
+				default: 'exact',
+				options: [
+					{ name: 'Exact', value: 'exact' },
+					{ name: 'Contains', value: 'contains' },
+				],
+				description: 'Exact compares the full title. Contains keeps titles that include the text.',
+			},
+		],
 	},
 ];
 
@@ -35,7 +44,7 @@ export async function filterJobsByTitle(
 	items: INodeExecutionData[],
 ): Promise<INodeExecutionData[]> {
 	const title = String(this.getNodeParameter('title')).trim();
-	const match = this.getNodeParameter('match') as string;
+	const match = this.getNodeParameter('options.match', 'exact') as string;
 	const needle = title.toLowerCase();
 
 	return items.filter((item) => {

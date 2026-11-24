@@ -89,17 +89,26 @@ export class HirekalTrigger implements INodeType {
 				],
 			},
 			{
-				displayName: 'Include Payload Details',
-				name: 'includePayloadDetails',
-				type: 'boolean',
-				default: true,
+				displayName: 'Options',
+				name: 'options',
+				type: 'collection',
+				placeholder: 'Add option',
+				default: {},
 				displayOptions: {
 					show: {
 						events: [HIREKAL_WEBHOOK_EVENTS.NEW_APPLICATION],
 					},
 				},
-				description:
-					'Whether application received events include answers, transcripts, and metrics. Hirekal may wait until AI processing finishes before sending.',
+				options: [
+					{
+						displayName: 'Include Payload Details',
+						name: 'includePayloadDetails',
+						type: 'boolean',
+						default: true,
+						description:
+							'Whether application received events include answers, transcripts, and metrics. Hirekal may wait until AI processing finishes before sending.',
+					},
+				],
 			},
 		],
 	};
@@ -301,7 +310,7 @@ function readIncludePayloadDetails(
 	if (!events.includes(HIREKAL_WEBHOOK_EVENTS.NEW_APPLICATION)) {
 		return false;
 	}
-	return context.getNodeParameter('includePayloadDetails', 0) as boolean;
+	return context.getNodeParameter('options.includePayloadDetails', true) as boolean;
 }
 
 async function hirekalApiRequest(
